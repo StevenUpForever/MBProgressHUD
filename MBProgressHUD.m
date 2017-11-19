@@ -1,6 +1,6 @@
 //
 // MBProgressHUD.m
-// Version 1.0.0
+// Version 1.1.0
 // Created by Matej Bukovinski on 2.4.09.
 //
 
@@ -43,9 +43,6 @@ static const CGFloat MBDefaultDetailsLabelFontSize = 12.f;
 @property (nonatomic, weak) NSTimer *minShowTimer;
 @property (nonatomic, weak) NSTimer *hideDelayTimer;
 @property (nonatomic, weak) CADisplayLink *progressObjectDisplayLink;
-
-// Deprecated
-@property (assign) BOOL taskInProgress;
 
 @end
 
@@ -178,6 +175,9 @@ static const CGFloat MBDefaultDetailsLabelFontSize = 12.f;
 }
 
 - (void)hideAnimated:(BOOL)animated afterDelay:(NSTimeInterval)delay {
+    // Cancel any scheduled hideDelayed: calls
+    [self.hideDelayTimer invalidate];
+
     NSTimer *timer = [NSTimer timerWithTimeInterval:delay target:self selector:@selector(handleHideTimer:) userInfo:@(animated) repeats:NO];
     [[NSRunLoop currentRunLoop] addTimer:timer forMode:NSRunLoopCommonModes];
     self.hideDelayTimer = timer;
@@ -225,10 +225,7 @@ static const CGFloat MBDefaultDetailsLabelFontSize = 12.f;
     if (animated) {
         [self animateIn:YES withType:self.animationType completion:NULL];
     } else {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-        self.bezelView.alpha = self.opacity;
-#pragma clang diagnostic pop
+        self.bezelView.alpha = 1.f;
         self.backgroundView.alpha = 1.f;
     }
 }
@@ -273,11 +270,9 @@ static const CGFloat MBDefaultDetailsLabelFontSize = 12.f;
         } else if (!animatingIn && type == MBProgressHUDAnimationZoomOut) {
             bezelView.transform = small;
         }
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-        bezelView.alpha = animatingIn ? self.opacity : 0.f;
-#pragma clang diagnostic pop
-        self.backgroundView.alpha = animatingIn ? 1.f : 0.f;
+        CGFloat alpha = animatingIn ? 1.f : 0.f;
+        bezelView.alpha = alpha;
+        self.backgroundView.alpha = alpha;
     };
 
     // Spring animations are nicer, but only available on iOS 7+
@@ -439,13 +434,6 @@ static const CGFloat MBDefaultDetailsLabelFontSize = 12.f;
     self.label.textColor = color;
     self.detailsLabel.textColor = color;
     [self.button setTitleColor:color forState:UIControlStateNormal];
-
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-    if (self.activityIndicatorColor) {
-        color = self.activityIndicatorColor;
-    }
-#pragma clang diagnostic pop
 
     // UIAppearance settings are prioritized. If they are preset the set color is ignored.
 
@@ -937,7 +925,7 @@ static const CGFloat MBDefaultDetailsLabelFontSize = 12.f;
             CGFloat radius = (CGRectGetWidth(self.bounds) / 2.f) - (processPath.lineWidth / 2.f);
             CGFloat endAngle = (self.progress * 2.f * (float)M_PI) + startAngle;
             [processPath addArcWithCenter:center radius:radius startAngle:startAngle endAngle:endAngle clockwise:YES];
-            // Ensure that we don't get color overlaping when _progressTintColor alpha < 1.f.
+            // Ensure that we don't get color overlapping when _progressTintColor alpha < 1.f.
             CGContextSetBlendMode(context, kCGBlendModeCopy);
             [_progressTintColor set];
             [processPath stroke];
@@ -1010,26 +998,14 @@ static const CGFloat MBDefaultDetailsLabelFontSize = 12.f;
     CGContextSetStrokeColorWithColor(context,[_lineColor CGColor]);
     CGContextSetFillColorWithColor(context, [_progressRemainingColor CGColor]);
     
-    // Draw background
+    // Draw background and Border
     CGFloat radius = (rect.size.height / 2) - 2;
     CGContextMoveToPoint(context, 2, rect.size.height/2);
     CGContextAddArcToPoint(context, 2, 2, radius + 2, 2, radius);
-    CGContextAddLineToPoint(context, rect.size.width - radius - 2, 2);
     CGContextAddArcToPoint(context, rect.size.width - 2, 2, rect.size.width - 2, rect.size.height / 2, radius);
     CGContextAddArcToPoint(context, rect.size.width - 2, rect.size.height - 2, rect.size.width - radius - 2, rect.size.height - 2, radius);
-    CGContextAddLineToPoint(context, radius + 2, rect.size.height - 2);
     CGContextAddArcToPoint(context, 2, rect.size.height - 2, 2, rect.size.height/2, radius);
-    CGContextFillPath(context);
-    
-    // Draw border
-    CGContextMoveToPoint(context, 2, rect.size.height/2);
-    CGContextAddArcToPoint(context, 2, 2, radius + 2, 2, radius);
-    CGContextAddLineToPoint(context, rect.size.width - radius - 2, 2);
-    CGContextAddArcToPoint(context, rect.size.width - 2, 2, rect.size.width - 2, rect.size.height / 2, radius);
-    CGContextAddArcToPoint(context, rect.size.width - 2, rect.size.height - 2, rect.size.width - radius - 2, rect.size.height - 2, radius);
-    CGContextAddLineToPoint(context, radius + 2, rect.size.height - 2);
-    CGContextAddArcToPoint(context, 2, rect.size.height - 2, 2, rect.size.height/2, radius);
-    CGContextStrokePath(context);
+    CGContextDrawPath(context, kCGPathFillStroke);
     
     CGContextSetFillColorWithColor(context, [_progressColor CGColor]);
     radius = radius - 2;
@@ -1110,6 +1086,9 @@ static const CGFloat MBDefaultDetailsLabelFontSize = 12.f;
     if ((self = [super initWithFrame:frame])) {
         if (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_7_0) {
             _style = MBProgressHUDBackgroundStyleBlur;
+#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 80000 || TARGET_OS_TV
+            _blurEffectStyle = UIBlurEffectStyleLight;
+#endif
             if (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_8_0) {
                 _color = [UIColor colorWithWhite:0.8f alpha:0.6f];
             } else {
@@ -1154,6 +1133,20 @@ static const CGFloat MBDefaultDetailsLabelFontSize = 12.f;
     }
 }
 
+#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 80000 || TARGET_OS_TV
+
+- (void)setBlurEffectStyle:(UIBlurEffectStyle)blurEffectStyle {
+    if (_blurEffectStyle == blurEffectStyle) {
+        return;
+    }
+
+    _blurEffectStyle = blurEffectStyle;
+
+    [self updateForBackgroundStyle];
+}
+
+#endif
+
 ///////////////////////////////////////////////////////////////////////////////////////////
 #pragma mark - Views
 
@@ -1162,7 +1155,7 @@ static const CGFloat MBDefaultDetailsLabelFontSize = 12.f;
     if (style == MBProgressHUDBackgroundStyleBlur) {
 #if __IPHONE_OS_VERSION_MAX_ALLOWED >= 80000 || TARGET_OS_TV
         if (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_8_0) {
-            UIBlurEffect *effect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleLight];
+            UIBlurEffect *effect = [UIBlurEffect effectWithStyle:self.blurEffectStyle];
             UIVisualEffectView *effectView = [[UIVisualEffectView alloc] initWithEffect:effect];
             [self addSubview:effectView];
             effectView.frame = self.bounds;
@@ -1218,6 +1211,7 @@ static const CGFloat MBDefaultDetailsLabelFontSize = 12.f;
 @end
 
 
+<<<<<<< HEAD
 @implementation MBProgressHUD (Deprecated)
 
 #pragma mark - Class
